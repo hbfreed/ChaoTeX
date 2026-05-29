@@ -75,10 +75,15 @@ A build writes `data/dataset/items.jsonl` (one item per line: `id`, `reference`,
 
 ## Scoring
 
-Transcriptions are compared as text after light normalization (strip math
-delimiters / fences, collapse whitespace, drop spacing-only commands), so
-LaTeX-equivalent answers aren't penalized. Metrics: exact match, normalized
-edit-distance similarity (0–1), and raw edit distance.
+Transcriptions are compared as text after normalization that folds **spellings
+which render identically**, so the score measures *seeing*, not LaTeX dialect:
+strip fences / math delimiters, drop spacing-only commands and manual delimiter
+sizing (`\left`, `\bigl`, …), unify upright wrappers (`\text`↔`\mathrm`↔
+`\operatorname`) and angle brackets (`\langle`↔`<`), alias equivalent macros
+(`\leq`↔`\le`, `\rightarrow`↔`\to`, …), drop redundant braces (`^{x}`→`^x`,
+`{m_i}^3`→`m_i^3`), and ignore insignificant math-mode whitespace. Genuine
+misreads (a wrong variable, a scrambled fraction) are still penalized. Metrics:
+exact match, normalized edit-distance similarity (0–1), and raw edit distance.
 
 ## Evaluating a model
 
