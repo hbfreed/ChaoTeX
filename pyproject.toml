@@ -1,0 +1,39 @@
+[project]
+name = "chaotex"
+version = "0.1.0"
+description = "A bizarre vision benchmark: transcribe manipulated LaTeX from images."
+readme = "README.md"
+authors = [
+    { name = "Henry", email = "hbfreed@protonmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "numpy>=2.4.6",
+    "pillow>=12.2.0",
+    "pylatexenc>=2.10",
+    "rapidfuzz>=3.14.5",
+    "typer>=0.26.3",
+]
+
+[project.scripts]
+chaotex = "chaotex.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.11.17,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.15",
+]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# typer's API intentionally uses Option()/Argument() as parameter defaults.
+"src/chaotex/cli.py" = ["B008"]
