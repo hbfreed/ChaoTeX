@@ -80,8 +80,32 @@ delimiters / fences, collapse whitespace, drop spacing-only commands), so
 LaTeX-equivalent answers aren't penalized. Metrics: exact match, normalized
 edit-distance similarity (0–1), and raw edit distance.
 
+## Evaluating a model
+
+The benchmark runs through [verifiers](https://github.com/PrimeIntellect-ai/verifiers),
+driving any vision model on [OpenRouter](https://openrouter.ai). Each item becomes
+a single multimodal prompt (instruction + the chaotic PNG); the reward is the
+`similarity` score against the ground-truth LaTeX, with `exact` reported alongside.
+
+```bash
+# 1. Put your OpenRouter key in a .env (gitignored)
+cp .env.example .env && $EDITOR .env        # set OPENROUTER_API_KEY=sk-or-...
+
+# 2. Build a dataset if you haven't, then evaluate
+uv run chaotex build --per-paper 3
+uv run chaotex eval --num 10                # default model: google/gemini-3.1-flash-lite
+
+# Options: --model <openrouter-slug>  --difficulty easy|medium|hard
+#          --num -1 (all)  --rollouts N  --concurrency N
+```
+
+It prints mean similarity + exact-match rate **overall and broken down by
+difficulty and by transform** — so you can see exactly which kinds of chaos the
+model trips on. Requests use the **`flex`** service tier (≈50% cheaper); a quick
+probe call up front confirms the provider actually served `flex`.
+
 ## Status / next steps
 
-PoC focused on display equations. Natural extensions: a model-eval harness
-(run a VLM over `items.jsonl`, score, leaderboard), a larger/curated paper set,
-and per-token geometric distortion.
+PoC focused on display equations. The eval harness is built (`chaotex eval`).
+Natural extensions: a leaderboard across models, a larger/curated paper set, and
+per-token geometric distortion.

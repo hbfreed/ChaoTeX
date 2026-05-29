@@ -12,8 +12,10 @@ dependencies = [
     "numpy>=2.4.6",
     "pillow>=12.2.0",
     "pylatexenc>=2.10",
+    "python-dotenv>=1.2.2",
     "rapidfuzz>=3.14.5",
     "typer>=0.26.3",
+    "verifiers>=0.1.14",
 ]
 
 [project.scripts]
@@ -27,6 +29,15 @@ build-backend = "uv_build"
 dev = [
     "ruff>=0.15.15",
 ]
+
+# verifiers env discovery + eval defaults. `chaotex.eval:load_environment` is the
+# entry point; the CLI wrapper (`chaotex eval`) is the primary driver.
+[tool.verifiers]
+module = "chaotex.eval"
+
+[tool.verifiers.eval]
+num_examples = 10
+rollouts_per_example = 1
 
 [tool.ruff]
 line-length = 110

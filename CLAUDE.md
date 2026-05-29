@@ -63,7 +63,8 @@ These are the load-bearing design rules. Most past bugs came from violating one.
 | `degrade.py` | post-render pixel effects (blur, downscale, noise, contrast, jpeg) |
 | `render.py` | `render_document()`, `math_box()`, `assemble()`, `RenderError` |
 | `score.py` | `normalize()` + `score() -> Score(exact, similarity, edit_distance, ref_len)` |
-| `cli.py` | typer app: `demo`, `build`, `score` |
+| `eval.py` | verifiers harness: `build_dataset`, `load_environment`, `similarity`/`exact` rewards, OpenRouter `ClientConfig`, `probe_service_tier` |
+| `cli.py` | typer app: `demo`, `build`, `score`, `eval` |
 
 `chaos.apply_chaos()` returns the rendered body + preamble **and** the chosen
 pixel `degrade` effects (applied afterward by `degrade.degrade_image`, since
@@ -107,35 +108,54 @@ uv run chaotex score '\[ E=mc^2 \]' '...'   # score a transcription
   equations with `\frac`, `\sqrt`, sub/superscripts, and `\left…\right` — those
   expose the brace/insertion edge cases above.
 
-## Eval harness (planned — see TODO below)
+## Eval harness (built — `eval.py` + `chaotex eval`)
 
 The benchmark is scored with [**verifiers**](https://github.com/PrimeIntellect-ai/verifiers)
 (PrimeIntellect), driving models through **OpenRouter** (OpenAI-compatible API).
+`eval.py` builds the environment; `chaotex eval` (cli.py) drives it and prints
+the per-slice report.
 
-- **Environment**: a `load_environment()` returning a `vf.SingleTurnEnv(dataset, rubric, parser)`.
-  - **dataset**: a HuggingFace `datasets.Dataset` built from `data/dataset/items.jsonl`. One row per item:
-    - `prompt`: a single user message whose `content` is `[{"type":"text","text": INSTRUCTION}, {"type":"image_url","image_url":{"url": "data:image/png;base64,…"}}]` (verifiers supports multimodal input — cf. its `mmmu` env).
-    - `answer`: the clean `reference` LaTeX (ground truth).
-    - `info`: `{id, difficulty, transforms, degrade, arxiv_id}` for per-slice reporting.
-  - **parser**: strip ``` fences / surrounding prose to isolate the LaTeX.
-  - **rubric**: async reward funcs wrapping `chaotex.score.score` — `similarity` (0–1) as the primary reward, plus a binary `exact`. Scoring already normalizes delimiters/spacing, so the parser can be light.
-- **Provider**: OpenRouter. base_url `https://openrouter.ai/api/v1`, key from env `OPENROUTER_API_KEY`.
-- **Service tier**: request **`flex`** (≈50% cheaper, higher latency, lower availability — fine for batch eval). Pass as a top-level sampling arg: `vf-eval … -S '{"service_tier":"flex"}'`. Flex is only honored by OpenAI / Google Vertex / Google AI Studio; the response echoes the served tier (`flex`/`default`/`null`) — log it to confirm we actually got the discount.
-- **Default model**: `google/gemini-3.1-flash-lite` — exact OpenRouter slug (cheap; Google → flex-eligible).
+- **Environment** (`eval.load_environment()` → `vf.SingleTurnEnv`):
+  - **dataset**: `datasets.Dataset` from `data/dataset/items.jsonl` (`build_dataset`).
+    One row per item: `prompt` is a single multimodal user message
+    (`[{type:text, text:INSTRUCTION}, {type:image_url, image_url:{url:"data:image/png;base64,…"}}]`),
+    `answer` is the clean `reference` LaTeX, `info` is
+    `{id, difficulty, transforms, degrade, arxiv_id}` for per-slice reporting.
+    `transforms`/`degrade` are **comma-joined strings** (flat Arrow schema; avoids
+    empty-list typing) — split on `,` when slicing.
+  - **parser**: `vf.Parser(extract_fn=parse_latex)` — prefers a fenced block, else
+    strips stray backticks. `score()` normalizes again at scoring time, so this is light.
+  - **rubric**: `vf.Rubric(funcs=[similarity_reward, exact_reward], weights=[1.0, 0.0])`
+    wrapping `chaotex.score.score`. `similarity` (0–1) is the reward; `exact` rides
+    along as a weight-0 metric.
+- **Provider**: OpenRouter via `vf.ClientConfig(client_type="openai_chat_completions",
+  api_base_url="https://openrouter.ai/api/v1", api_key_var="OPENROUTER_API_KEY")`.
+  The key is read from a project-local **`.env`** (gitignored; see `.env.example`),
+  loaded by `load_dotenv()` in cli.py.
+- **Service tier**: `flex` (≈50% cheaper) passed in `sampling_args`. verifiers
+  normalizes away the raw response, so `chaotex eval` confirms the discount with a
+  one-shot `probe_service_tier()` direct call that reads `response.service_tier`
+  before the run (prints `requested=… served=…`).
+- **Default model**: `config.DEFAULT_MODEL = "google/gemini-3.1-flash-lite"`
+  (cheap; Google → flex-eligible). Shared by `eval.py` and the CLI default.
+- **Discovery**: `[tool.verifiers]` `module = "chaotex.eval"` + `[tool.verifiers.eval]`
+  defaults in `pyproject.toml`.
 
-## TODO — make the eval runnable
+## TODO — eval is runnable; remaining polish
 
-Ordered so the eval works once all are checked. Keep this list current.
+Done: deps (`verifiers`/`datasets`/`openai`/`python-dotenv`), `eval.py`
+(`image_data_url`/`build_dataset`/`INSTRUCTION`/`parse_latex`/rubric/`load_environment`),
+OpenRouter+flex wiring with served-tier probe, default model, `chaotex eval` CLI
+(per-difficulty + per-transform breakdown), end-to-end smoke test (served tier
+confirmed `flex`), README docs.
 
-- [ ] `uv add verifiers && prime lab setup --skip-install` (verifiers pulls the OpenAI client + `datasets`; `prime lab setup` wires up the verifiers/prime CLI without reinstalling envs).
-- [ ] `src/chaotex/eval.py`: `image_data_url(path)` (base64 PNG → data URL); `build_dataset(items_path, difficulty=None, max_items=None)` → `datasets.Dataset` with `prompt`/`answer`/`info`; a transcription `INSTRUCTION` constant ("Transcribe the math in this image as LaTeX; output only the LaTeX").
-- [ ] In `eval.py`: a `vf.Parser` (or plain fn) that strips fences, and a `vf.Rubric` with `similarity`/`exact` reward funcs wrapping `chaotex.score.score`; `load_environment(**kwargs)` returning the `vf.SingleTurnEnv`.
-- [ ] Lay out the env so the `prime` CLI discovers it; pin eval defaults in `[tool.verifiers.eval]` (num_examples, rollouts_per_example).
-- [ ] OpenRouter wiring: base_url + `OPENROUTER_API_KEY`, and pass `-S '{"service_tier":"flex"}'` (if the OpenAI SDK rejects it top-level, move to `extra_body`). Log the served tier from the response.
-- [ ] Set `google/gemini-3.1-flash-lite` as the default model.
-- [ ] `chaotex eval` CLI wrapper (typer) that runs the eval and prints mean similarity + exact-match rate **broken down by difficulty and by transform**.
-- [ ] Smoke test end-to-end: `chaotex build --per-paper 3` → run eval on ~10 items via flex → verify scores produced and `service_tier == "flex"` in responses.
-- [ ] Document the run command in `README.md`.
+- [ ] `prime lab setup --skip-install` / `vf-eval`-driven runs: we drive the env
+  through our own `chaotex eval` CLI (not the `prime`/`vf-eval` CLI). The
+  `[tool.verifiers]` discovery keys are in place but the `prime` CLI path is unverified.
+- [ ] Confirm `service_tier` is forwarded by verifiers' `sampling_args` to the
+  provider during the *actual* eval (the probe confirms provider support, not
+  that verifiers passes it through). If not, move it to `extra_body`.
+- [ ] Larger smoke runs / cost check at scale; wire eval into CI if desired.
 
 ## Also not yet built
 

@@ -9,6 +9,10 @@ PACKAGE_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_ROOT.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 
+# Default eval model (OpenRouter slug). Shared by the eval harness and CLI so the
+# default lives in one place. Cheap + flex-eligible (Google → flex tier).
+DEFAULT_MODEL = "google/gemini-3.1-flash-lite"
+
 # Standalone document. `preamble` carries chaos packages/commands; `body` is the
 # (possibly transformed) math box.
 DOC_TEMPLATE = r"""\documentclass[border=12pt]{standalone}
